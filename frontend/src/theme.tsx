@@ -62,18 +62,19 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   useEffect(() => {
     (async () => {
-      const saved = (await AsyncStorage.getItem("lex_theme")) as ThemeMode | null;
-      const initial = saved || "light";
-      applyMode(initial);
-      setModeState(initial);
+      // Dark mode is temporarily disabled — pending full refactor for all screens.
+      // We clear any previously stored dark preference and force light.
+      await AsyncStorage.removeItem("lex_theme").catch(() => {});
+      applyMode("light");
+      setModeState("light");
       setLoaded(true);
     })();
   }, []);
 
   const setMode = (m: ThemeMode) => {
-    applyMode(m);
-    setModeState(m);
-    AsyncStorage.setItem("lex_theme", m).catch(() => {});
+    // No-op while dark mode is being finalized. Theme stays light.
+    applyMode("light");
+    setModeState("light");
   };
 
   const value = useMemo(() => ({ mode, setMode }), [mode]);

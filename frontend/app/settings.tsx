@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, Alert, TouchableOpacity } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { colors, spacing, type, useTheme } from "../src/theme";
+import { colors, spacing, type } from "../src/theme";
 import { Button, Input, Avatar } from "../src/ui";
 import { TopBar } from "../src/TopBar";
 import { useAuth } from "../src/auth";
@@ -10,7 +10,6 @@ import { Ionicons } from "@expo/vector-icons";
 
 export default function Settings() {
   const { user, refreshUser, logout } = useAuth();
-  const { mode, setMode } = useTheme();
   const [name, setName] = useState(user?.name || "");
   const [bar, setBar] = useState(user?.bar_council_no || "");
   const [city, setCity] = useState(user?.city || "");
@@ -55,25 +54,14 @@ export default function Settings() {
             <Text style={[type.small, { color: colors.inkMuted }]}>{user?.email}</Text>
           </View>
 
-          {/* Appearance */}
+          {/* Appearance — dark mode coming in next release */}
           <Text style={[type.overline, { marginBottom: spacing.sm, color: colors.inkMuted }]}>Appearance</Text>
-          <View style={[styles.themeRow, { borderColor: colors.border, backgroundColor: colors.bgMuted }]}>
-            <TouchableOpacity
-              style={[styles.themeOpt, mode === "light" && { backgroundColor: colors.ink }]}
-              onPress={() => setMode("light")}
-              testID="theme-light"
-            >
-              <Ionicons name="sunny-outline" size={16} color={mode === "light" ? colors.onPrimary : colors.ink} />
-              <Text style={[styles.themeOptText, { color: mode === "light" ? colors.onPrimary : colors.ink }]}>Light</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.themeOpt, mode === "dark" && { backgroundColor: colors.ink }]}
-              onPress={() => setMode("dark")}
-              testID="theme-dark"
-            >
-              <Ionicons name="moon-outline" size={16} color={mode === "dark" ? colors.onPrimary : colors.ink} />
-              <Text style={[styles.themeOptText, { color: mode === "dark" ? colors.onPrimary : colors.ink }]}>Dark</Text>
-            </TouchableOpacity>
+          <View style={[styles.infoCard, { borderColor: colors.border, backgroundColor: colors.bgMuted }]}>
+            <Ionicons name="sunny-outline" size={18} color={colors.ink} />
+            <View style={{ flex: 1 }}>
+              <Text style={[type.body, { color: colors.ink, fontWeight: "700" }]}>Light mode</Text>
+              <Text style={[type.small, { color: colors.inkMuted, marginTop: 2 }]}>Dark mode is coming in the next release.</Text>
+            </View>
           </View>
 
           <View style={{ height: spacing.xl }} />
@@ -99,7 +87,5 @@ export default function Settings() {
 }
 
 const styles = StyleSheet.create({
-  themeRow: { flexDirection: "row", borderWidth: 1, borderRadius: 4, padding: 3, gap: 3 },
-  themeOpt: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 12, borderRadius: 3 },
-  themeOptText: { fontSize: 14, fontWeight: "700" },
+  infoCard: { flexDirection: "row", alignItems: "center", gap: spacing.md, padding: spacing.lg, borderWidth: 1, borderRadius: 4 },
 });

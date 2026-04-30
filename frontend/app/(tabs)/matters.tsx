@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, RefreshC
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { colors, spacing, type, formatDateShort } from "../../src/theme";
+import { colors, spacing, type, formatDateShort, useTheme } from "../../src/theme";
 import { api } from "../../src/api";
 import { Avatar, Badge, EmptyState } from "../../src/ui";
 
