@@ -1,0 +1,47 @@
+{
+  "summary": "First iteration backend testing for LexManager. Created comprehensive pytest suite (36 tests) covering Auth, Dashboard, Clients (incl. conflict-check route ordering), Matters, Events, Time Entries, Invoices (with GST/payment), Notes, Seed idempotency, and multi-tenant scoping. ALL 36 TESTS PASSED (100% success). Tested against EXPO_PUBLIC_BACKEND_URL via the public ingress URL.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/clients/conflict-check", "issue": "Route is defined twice in server.py (lines 260-268 and again 332-340). The second definition is unreachable but creates dead code and confusion. Recommend removing the duplicate."},
+      {"endpoint": "auth/register", "issue": "Problem statement says register should auto-seed demo data, but the register endpoint does NOT call seeding. demo@lex.in only has data because /api/seed-demo was called separately. New users (e.g., test@lex.in) will have empty data. Confirm whether this is intentional (frontend may call /seed-demo after register)."},
+      {"endpoint": "JWT", "issue": "Default JWT_SECRET 'lexmanager-secret-change-me' is 27 bytes (<32 bytes) — pyjwt logs InsecureKeyLengthWarning. Should set a stronger JWT_SECRET in env for production."},
+      {"endpoint": "/api/clients (list)", "issue": "N+1 query pattern — for each client, an extra count_documents is issued for matter_count. Acceptable for small data, but consider aggregation for scale."},
+      {"endpoint": "/api/dashboard/stats overdue_amount", "issue": "Uses string compare `due_date < today` (ISO YYYY-MM-DD); works correctly because of lexicographic ordering, just noting it relies on ISO date format consistency."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/conftest.py",
+    "/app/backend/tests/test_lexmanager_api.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "(Optional) Remove duplicate /api/clients/conflict-check route definition at lines 332-340 of server.py.",
+    "(Optional) Decide whether registration should auto-seed demo data; if yes, call seed_demo internally on register. If no, update problem statement description.",
+    "(Optional) Set a stronger JWT_SECRET (>=32 bytes) in backend/.env to silence the InsecureKeyLengthWarning."
+  ],
+  "critical_code_review_comments": [
+    "Duplicate route definition for /api/clients/conflict-check (lines 260 and 332 of server.py). FastAPI will keep the first registration; the second is dead code.",
+    "All endpoints correctly enforce lawyer_id scoping; multi-tenant isolation verified in test_users_only_see_own_data.",
+    "MongoDB _id is properly stripped on every read (verified across all list/detail responses).",
+    "Critical route-ordering bug (conflict-check vs {client_id}) is correctly handled — conflict-check defined BEFORE the path-param route.",
+    "Invoice math is correct: subtotal = lines + disbursements; GST = 18% if include_gst; payment status updates to paid/partial correctly.",
+    "Time entry billed_amount auto-calc verified: (duration_mins/60)*rate."
+  ],
+  "updated_files": [
+    "/app/backend/tests/conftest.py (created)",
+    "/app/backend/tests/test_lexmanager_api.py (created)"
+  ],
+  "success_rate": {"backend": "100% (36/36)", "frontend": "not tested"},
+  "seed_data_creation": "No new seed data created. Used existing demo@lex.in user (already seeded). Tests create temporary entities prefixed TEST_ and clean them up.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend is fully validated. Tests run against EXPO_PUBLIC_BACKEND_URL (public ingress). Demo user demo@lex.in/demo1234 has full seed data (5 clients, 5 matters, 7 events, 5 time entries, 2 invoices). The pytest suite is regression-ready at /app/backend/tests/test_lexmanager_api.py. Conflict-check route ordering verified — works correctly and is NOT captured as client_id='conflict-check'.",
+  "rca_of_issue": "N/A — no failures."
+}
