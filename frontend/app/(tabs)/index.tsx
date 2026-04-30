@@ -7,6 +7,7 @@ import { colors, spacing, type, formatINR, formatDateShort, daysBetween, useThem
 import { api } from "../../src/api";
 import { useAuth } from "../../src/auth";
 import { Badge } from "../../src/ui";
+import { TimerPill } from "../../src/TimerPill";
 
 type Stats = {
   active_matters: number;
@@ -74,6 +75,9 @@ export default function Home() {
             <Ionicons name="settings-outline" size={20} color={colors.ink} />
           </TouchableOpacity>
         </View>
+
+        {/* Active timer pill */}
+        <TimerPill />
 
         {/* Stat Grid - Grid Borders pattern */}
         <View style={styles.statGrid}>
@@ -147,7 +151,7 @@ export default function Home() {
             <QuickAction styles={styles} icon="person-add-outline" label="New client" onPress={() => router.push("/new-client")} testID="qa-new-client" />
             <QuickAction styles={styles} icon="briefcase-outline" label="New matter" onPress={() => router.push("/new-matter")} testID="qa-new-matter" />
             <QuickAction styles={styles} icon="calendar-outline" label="Add hearing" onPress={() => router.push("/new-event")} testID="qa-new-event" />
-            <QuickAction styles={styles} icon="time-outline" label="Log time" onPress={() => router.push("/new-time")} testID="qa-new-time" />
+            <QuickAction styles={styles} icon="timer-outline" label="Start timer" onPress={() => router.push("/timer")} testID="qa-timer" />
           </View>
         </View>
 

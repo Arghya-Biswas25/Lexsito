@@ -866,6 +866,106 @@ async def root():
     return {"message": "LexManager API", "version": "1.0"}
 
 
+# ============ Active Timer ============
+class TimerStartIn(BaseModel):
+    matter_id: str
+    activity: str = "other"
+    description: Optional[str] = None
+    is_billable: bool = True
+
+
+class TimerStopIn(BaseModel):
+    description: Optional[str] = None  # allow updating note before saving
+
+
+@api_router.get("/timer")
+async def get_active_timer(user=Depends(get_current_user)):
+    timer = await db.timers.find_one({"lawyer_id": user["id"]}, {"_id": 0})
+    if not timer:
+        return {"active": False}
+    # enrich
+    matter = await db.matters.find_one({"id": timer["matter_id"]}, {"_id": 0, "title": 1, "client_id": 1, "hourly_rate": 1})
+    if matter:
+        timer["matter_title"] = matter.get("title")
+        timer["hourly_rate"] = matter.get("hourly_rate") or user.get("hourly_rate") or 2500.0
+        client = await db.clients.find_one({"id": matter.get("client_id")}, {"_id": 0, "name": 1})
+        timer["client_name"] = (client or {}).get("name")
+    return {"active": True, "timer": timer}
+
+
+@api_router.post("/timer/start")
+async def start_timer(payload: TimerStartIn, user=Depends(get_current_user)):
+    # Only one active timer per user
+    existing = await db.timers.find_one({"lawyer_id": user["id"]}, {"_id": 0})
+    if existing:
+        raise HTTPException(status_code=400, detail="A timer is already running. Stop it first.")
+    matter = await db.matters.find_one({"id": payload.matter_id, "lawyer_id": user["id"]}, {"_id": 0})
+    if not matter:
+        raise HTTPException(status_code=404, detail="Matter not found")
+    timer_id = str(uuid.uuid4())
+    doc = {
+        "id": timer_id,
+        "lawyer_id": user["id"],
+        "matter_id": payload.matter_id,
+        "activity": payload.activity,
+        "description": payload.description,
+        "is_billable": payload.is_billable,
+        "started_at": now_iso(),
+    }
+    await db.timers.insert_one(dict(doc))
+    doc.pop("_id", None)
+    doc["matter_title"] = matter.get("title")
+    return {"active": True, "timer": doc}
+
+
+@api_router.post("/timer/stop")
+async def stop_timer(payload: TimerStopIn, user=Depends(get_current_user)):
+    timer = await db.timers.find_one({"lawyer_id": user["id"]}, {"_id": 0})
+    if not timer:
+        raise HTTPException(status_code=404, detail="No active timer")
+
+    # compute elapsed minutes
+    started = datetime.fromisoformat(timer["started_at"].replace("Z", "+00:00"))
+    now = datetime.now(timezone.utc)
+    elapsed_seconds = max(0, int((now - started).total_seconds()))
+    duration_mins = max(1, round(elapsed_seconds / 60))  # at least 1 minute
+
+    # rate
+    matter = await db.matters.find_one({"id": timer["matter_id"]}, {"_id": 0, "hourly_rate": 1})
+    rate = (matter or {}).get("hourly_rate") or user.get("hourly_rate") or 2500.0
+    is_billable = timer.get("is_billable", True)
+    billed_amount = round((duration_mins / 60.0) * rate, 2) if is_billable else 0.0
+
+    # Create time entry
+    te_id = str(uuid.uuid4())
+    description = payload.description if payload.description is not None else timer.get("description")
+    entry = {
+        "id": te_id,
+        "lawyer_id": user["id"],
+        "matter_id": timer["matter_id"],
+        "activity": timer.get("activity", "other"),
+        "description": description,
+        "duration_mins": duration_mins,
+        "date": now.date().isoformat(),
+        "is_billable": is_billable,
+        "hourly_rate": rate,
+        "billed_amount": billed_amount,
+        "invoice_id": None,
+        "from_timer": True,
+        "created_at": now_iso(),
+    }
+    await db.time_entries.insert_one(dict(entry))
+    await db.timers.delete_one({"id": timer["id"]})
+    entry.pop("_id", None)
+    return {"saved": True, "time_entry": entry, "duration_mins": duration_mins, "billed_amount": billed_amount}
+
+
+@api_router.post("/timer/cancel")
+async def cancel_timer(user=Depends(get_current_user)):
+    res = await db.timers.delete_one({"lawyer_id": user["id"]})
+    return {"cancelled": res.deleted_count > 0}
+
+
 # ============ AI Drafting (Claude Haiku 4.5) ============
 from emergentintegrations.llm.chat import LlmChat, UserMessage
 
