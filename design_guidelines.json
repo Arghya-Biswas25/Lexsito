@@ -1,0 +1,125 @@
+{
+  "theme": {
+    "archetype": "Archetype 4 (Swiss & High-Contrast)",
+    "mode": "Light",
+    "rationale": "Legal practice management requires ultimate clarity, authority, and truth. Using a high-contrast, strict Swiss layout ensures that complex data (deadlines, billable hours, conflict checks) is easily scannable on mobile screens. The monochrome structure removes distractions, while severe typography creates a highly professional, trustworthy app experience."
+  },
+  "typography": {
+    "headings": {
+      "font_family": "Cabinet Grotesk, sans-serif",
+      "weights": ["light", "bold", "black"],
+      "usage": "Use tight tracking (tracking-tight) for large headers to convey editorial sharpness. Absolutely no Inter, Roboto, or standard UI fonts for headings."
+    },
+    "body": {
+      "font_family": "IBM Plex Sans, sans-serif",
+      "weights": ["regular", "medium", "semibold"],
+      "usage": "Highly legible for dense legal dates, numbers, financial data, and case files."
+    },
+    "scale": {
+      "h1": "text-4xl md:text-5xl tracking-tight leading-none font-bold",
+      "h2": "text-2xl md:text-3xl tracking-tight font-semibold",
+      "h3": "text-xl font-medium",
+      "body": "text-base leading-relaxed",
+      "small": "text-sm text-muted-foreground",
+      "micro": "text-xs tracking-widest uppercase font-bold"
+    }
+  },
+  "colors": {
+    "background": {
+      "primary": "#FFFFFF",
+      "secondary": "#F4F4F5",
+      "tertiary": "#E4E4E7"
+    },
+    "text": {
+      "primary": "#09090B",
+      "secondary": "#52525B",
+      "inverse": "#FFFFFF"
+    },
+    "brand": {
+      "primary": "#000000",
+      "secondary": "#18181B"
+    },
+    "accents": {
+      "alert_red": "#E11D48",
+      "success_green": "#16A34A",
+      "info_blue": "#2563EB",
+      "highlight_yellow": "#FEF08A"
+    },
+    "rules": [
+      "No gradients. UI must be 95% monochrome.",
+      "Color is strictly for functional cues (Alert Red for overdue invoices or urgent hearings today).",
+      "Hover/Press states must invert colors or darken significantly.",
+      "Do NOT use teal or purple under any circumstances."
+    ]
+  },
+  "spacing_and_layout": {
+    "padding": "Generous spacing. Screen edges must use p-4 or p-6. Container blocks use p-6 or p-8.",
+    "border_radius": "Sharp or minimal. Max rounded-md (6px) or rounded-none. No pill-shaped buttons unless it's a small functional tag.",
+    "surfaces": "Cardless design or strict 1px solid borders (border-black/10) with absolutely NO drop shadows.",
+    "mobile_patterns": [
+      "Bottom Tab Navigation for primary routes: Home, Matters, Clients, Billing.",
+      "Bottom Sheets for quick entry (Add Note, Track Time, New Client) to keep context.",
+      "Thumb-friendly touch targets (minimum 44x44px for icons/buttons).",
+      "Use 'Grid Borders' pattern for metric grids (1px borders between items, exposing the skeleton)."
+    ]
+  },
+  "components": {
+    "buttons": {
+      "primary": "Solid black background, white text, 0px or 4px radius, tracking-wide. Must include hover/active state inversion or opacity shift.",
+      "secondary": "Transparent background, 1px black border, black text.",
+      "interaction": "Active states scale down slightly (active:scale-95) with opacity change."
+    },
+    "cards": {
+      "dashboard_metric": "Flat, 1px border, bold numerical metric (H2), micro uppercase descriptive overline. No shadow.",
+      "matter_list_item": "Left-aligned, clear typography hierarchy. Case title in H3, client and date in muted small text. Chevron on right for affordance."
+    },
+    "inputs": {
+      "style": "Bottom border only (flushed) or rigid square borders. Focus state thickens the border to 2px black (focus:ring-2 focus:ring-black).",
+      "labels": "Micro uppercase labels above inputs, strong tracking."
+    },
+    "navigation": {
+      "bottom_tab": "Fixed at bottom, monochrome icons, active tab gets a 2px top border highlight (black).",
+      "top_bar": "Sticky top, blur background (bg-white/80 backdrop-blur-xl backdrop-saturate-150), 1px solid bottom border (border-black/10)."
+    }
+  },
+  "media": {
+    "images": [
+      {
+        "category": "empty_state_background",
+        "url": "https://images.unsplash.com/photo-1678117367116-efb97dfc4183?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2Nzh8MHwxfHNlYXJjaHwyfHxtb2Rlcm4lMjBhcmNoaXRlY3R1cmUlMjBjb3VydGhvdXNlfGVufDB8fHx8MTc3NzU0Mzc3MHww&ixlib=rb-4.1.0&q=85",
+        "description": "Modern architecture courthouse for aesthetic empty states or login background."
+      },
+      {
+        "category": "client_avatar_placeholder_1",
+        "url": "https://images.unsplash.com/photo-1649433658557-54cf58577c68?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1ODB8MHwxfHNlYXJjaHwzfHxpbmRpYW4lMjBwcm9mZXNzaW9uYWwlMjBwb3J0cmFpdHxlbnwwfHx8fDE3Nzc1NDM3NzB8MA&ixlib=rb-4.1.0&q=85",
+        "description": "Indian professional portrait for client list avatars."
+      },
+      {
+        "category": "client_avatar_placeholder_2",
+        "url": "https://images.unsplash.com/photo-1598411435746-47bfecc3ea98?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1ODB8MHwxfHNlYXJjaHwxfHxpbmRpYW4lMjBwcm9mZXNzaW9uYWwlMjBwb3J0cmFpdHxlbnwwfHx8fDE3Nzc1NDM3NzB8MA&ixlib=rb-4.1.0&q=85",
+        "description": "Indian professional portrait for client list avatars."
+      }
+    ],
+    "icons": {
+      "library": "@phosphor-icons/react",
+      "style": "Regular or Bold weight. Clean, unopinionated.",
+      "usage_instructions": "yarn add @phosphor-icons/react. Use for bottom nav and quick actions."
+    }
+  },
+  "accessibility_and_testing": {
+    "contrast": "Minimum 4.5:1 for standard text. Black on white ensures max contrast.",
+    "testing_CRITICAL": "All interactive and key informational elements MUST include a 'data-testid' attribute. Example: data-testid='login-submit-button', data-testid='matter-item-123', data-testid='tab-calendar'."
+  },
+  "motion": {
+    "transitions": "Fast, purposeful. transition-all duration-200 ease-in-out.",
+    "page_transitions": "Slide-in from right for details (standard mobile OS behavior). Bottom sheet slide-up."
+  },
+  "instructions_to_main_agent": [
+    "This is a mobile-first UI built with React.js (.js files, no .tsx). Use Tailwind mobile breakpoints (default classes) as the primary layout. Desktop breakpoints (md, lg) can act as tablet/desktop web views.",
+    "Do NOT use 'Inter' for headings. Stick to Cabinet Grotesk or fallback to a crisp geometric sans if unavailable.",
+    "Avoid Shadcn card shadows completely. Override them with flat styles, 1px monochrome borders, and zero shadow.",
+    "Rely on Indian legal context in dummy data: 'Saket District Court', '₹45,000', Indian names, GSTIN references.",
+    "Ensure all lists (Matters, Clients) are highly scannable. Left-align data. Use generous padding. Implement Conflict of Interest checks logically in the UI.",
+    "For the UI architecture, strictly follow the mobile app patterns: Fixed bottom navigation, scrollable content area, and sliding bottom sheets for quick actions."
+  ]
+}
