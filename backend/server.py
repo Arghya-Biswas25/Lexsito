@@ -329,17 +329,6 @@ async def delete_client(client_id: str, user=Depends(get_current_user)):
     return {"ok": True}
 
 
-@api_router.get("/clients/conflict-check")
-async def conflict_check(name: str, user=Depends(get_current_user)):
-    """Check if a proposed opposing party matches any existing client."""
-    name_lower = name.lower().strip()
-    if not name_lower:
-        return {"conflict": False, "matches": []}
-    clients = await db.clients.find({"lawyer_id": user["id"]}, {"_id": 0}).to_list(1000)
-    matches = [c for c in clients if name_lower in (c.get("name") or "").lower()]
-    return {"conflict": len(matches) > 0, "matches": matches[:5]}
-
-
 # ============ Matters ============
 @api_router.get("/matters")
 async def list_matters(user=Depends(get_current_user), q: Optional[str] = None, status: Optional[str] = None, client_id: Optional[str] = None):
