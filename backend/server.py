@@ -866,6 +866,237 @@ async def root():
     return {"message": "LexManager API", "version": "1.0"}
 
 
+# ============ AI Drafting (Claude Haiku 4.5) ============
+from emergentintegrations.llm.chat import LlmChat, UserMessage
+
+EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY")
+CLAUDE_MODEL = "claude-haiku-4-5-20251001"
+
+LEGAL_SYSTEM_PROMPT = """You are an expert legal drafting assistant for Indian advocates practicing in district and high courts.
+
+Rules:
+- Use formal Indian legal English with appropriate terms (e.g., "Hon'ble Court", "the Plaintiff", "the Respondent", "pleased to").
+- Reference Indian statutes, CPC, CrPC, IPC, Indian Evidence Act, etc. where relevant.
+- Use ₹ (INR) for amounts.
+- Structure documents with numbered paragraphs.
+- Be concise, professional, and court-ready.
+- Never fabricate case citations or judgments. If unsure, write "[citation to be verified]".
+- When generating drafts, include ALL standard sections (cause title, prayer, verification, etc.) appropriate to the document type."""
+
+
+class DraftFromFactsIn(BaseModel):
+    document_type: str  # plaint | legal_notice | bail_application | written_statement | vakalatnama | affidavit | other
+    facts: str
+    matter_id: Optional[str] = None
+    court_name: Optional[str] = None
+    case_number: Optional[str] = None
+    client_name: Optional[str] = None
+    opposing_party: Optional[str] = None
+
+
+class StrengthenIn(BaseModel):
+    text: str
+    mode: str = "strengthen"  # strengthen | simplify | formalize
+
+
+DOC_TYPE_TEMPLATES = {
+    "plaint": "Generate a complete PLAINT. Include: cause title, parties block, jurisdiction, facts (numbered), cause of action, relief/prayer, verification clause.",
+    "legal_notice": "Generate a formal LEGAL NOTICE under Section 80 CPC (if applicable). Include: advocate's letterhead placeholder, date, addressee, subject, grounds (numbered), demand, time limit, consequences, advocate signature block.",
+    "bail_application": "Generate a BAIL APPLICATION under appropriate section (Sec 437/438/439 CrPC). Include: cause title, grounds for bail (numbered), undertaking, prayer, verification.",
+    "written_statement": "Generate a WRITTEN STATEMENT. Include: cause title, preliminary objections, para-wise reply to plaint allegations, counter-claim (if any), prayer, verification.",
+    "vakalatnama": "Generate a standard VAKALATNAMA appointing advocate. Include cause title, appointment clause, powers, signature blocks.",
+    "affidavit": "Generate a formal AFFIDAVIT. Include: deponent details, sworn statements (numbered), verification clause, signature and attestation block.",
+    "other": "Generate an appropriate legal document.",
+}
+
+
+@api_router.post("/ai/draft-from-facts")
+async def ai_draft_from_facts(payload: DraftFromFactsIn, user=Depends(get_current_user)):
+    if not EMERGENT_LLM_KEY:
+        raise HTTPException(status_code=500, detail="AI not configured")
+    template = DOC_TYPE_TEMPLATES.get(payload.document_type, DOC_TYPE_TEMPLATES["other"])
+    context_parts = []
+    if payload.court_name:
+        context_parts.append(f"Court: {payload.court_name}")
+    if payload.case_number:
+        context_parts.append(f"Case No.: {payload.case_number}")
+    if payload.client_name:
+        context_parts.append(f"Client (on whose behalf): {payload.client_name}")
+    if payload.opposing_party:
+        context_parts.append(f"Opposing Party: {payload.opposing_party}")
+    context_block = "\n".join(context_parts) if context_parts else "(No case details provided yet — use [PLACEHOLDER] where needed.)"
+
+    user_text = f"""Draft a {payload.document_type.replace('_', ' ').upper()} for the following matter.
+
+{template}
+
+Case context:
+{context_block}
+
+Facts provided by the advocate:
+{payload.facts}
+
+Return ONLY the document content in plain text with clear paragraph structure. Use [PLACEHOLDER] for any missing specifics. Do not include any meta-commentary before or after the document."""
+
+    try:
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=f"draft-{user['id']}-{uuid.uuid4()}",
+            system_message=LEGAL_SYSTEM_PROMPT,
+        ).with_model("anthropic", CLAUDE_MODEL)
+        response = await chat.send_message(UserMessage(text=user_text))
+        return {"content": response, "document_type": payload.document_type}
+    except Exception as e:
+        logger.exception("AI draft failed")
+        raise HTTPException(status_code=500, detail=f"AI generation failed: {str(e)[:200]}")
+
+
+@api_router.post("/ai/strengthen")
+async def ai_strengthen(payload: StrengthenIn, user=Depends(get_current_user)):
+    if not EMERGENT_LLM_KEY:
+        raise HTTPException(status_code=500, detail="AI not configured")
+    mode_instructions = {
+        "strengthen": "Rewrite the following passage with stronger, more persuasive Indian legal English. Keep the same meaning but sharpen the language, improve precision of legal terms, and make it more court-ready. Return ONLY the rewritten text.",
+        "simplify": "Rewrite the following legal passage in plain, clear English that a non-lawyer client could understand. Preserve the factual meaning but remove jargon. Return ONLY the rewritten text.",
+        "formalize": "Rewrite the following passage in formal Indian legal English suitable for court filing. Return ONLY the rewritten text.",
+    }
+    instruction = mode_instructions.get(payload.mode, mode_instructions["strengthen"])
+    try:
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=f"strengthen-{user['id']}-{uuid.uuid4()}",
+            system_message=LEGAL_SYSTEM_PROMPT,
+        ).with_model("anthropic", CLAUDE_MODEL)
+        response = await chat.send_message(UserMessage(
+            text=f"{instruction}\n\nPassage:\n{payload.text}"
+        ))
+        return {"content": response}
+    except Exception as e:
+        logger.exception("AI strengthen failed")
+        raise HTTPException(status_code=500, detail=f"AI generation failed: {str(e)[:200]}")
+
+
+# ============ Drafts (saved legal documents) ============
+class DraftIn(BaseModel):
+    matter_id: str
+    title: str
+    document_type: str = "other"
+    content: str
+    status: str = "draft"
+
+
+@api_router.get("/drafts")
+async def list_drafts(user=Depends(get_current_user), matter_id: Optional[str] = None):
+    query = {"lawyer_id": user["id"]}
+    if matter_id:
+        query["matter_id"] = matter_id
+    drafts = await db.drafts.find(query, {"_id": 0}).sort("updated_at", -1).to_list(500)
+    for d in drafts:
+        m = await db.matters.find_one({"id": d["matter_id"]}, {"_id": 0, "title": 1})
+        d["matter_title"] = (m or {}).get("title")
+    return drafts
+
+
+@api_router.post("/drafts")
+async def create_draft(payload: DraftIn, user=Depends(get_current_user)):
+    draft_id = str(uuid.uuid4())
+    doc = payload.dict()
+    doc.update({
+        "id": draft_id,
+        "lawyer_id": user["id"],
+        "version": 1,
+        "created_at": now_iso(),
+        "updated_at": now_iso(),
+    })
+    await db.drafts.insert_one(dict(doc))
+    doc.pop("_id", None)
+    return doc
+
+
+@api_router.get("/drafts/{draft_id}")
+async def get_draft(draft_id: str, user=Depends(get_current_user)):
+    d = await db.drafts.find_one({"id": draft_id, "lawyer_id": user["id"]}, {"_id": 0})
+    if not d:
+        raise HTTPException(status_code=404, detail="Draft not found")
+    m = await db.matters.find_one({"id": d["matter_id"]}, {"_id": 0})
+    d["matter"] = m
+    return d
+
+
+@api_router.put("/drafts/{draft_id}")
+async def update_draft(draft_id: str, payload: DraftIn, user=Depends(get_current_user)):
+    existing = await db.drafts.find_one({"id": draft_id, "lawyer_id": user["id"]}, {"_id": 0})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Draft not found")
+    updates = payload.dict()
+    updates["updated_at"] = now_iso()
+    updates["version"] = (existing.get("version") or 1) + 1
+    await db.drafts.update_one({"id": draft_id}, {"$set": updates})
+    return await db.drafts.find_one({"id": draft_id}, {"_id": 0})
+
+
+@api_router.delete("/drafts/{draft_id}")
+async def delete_draft(draft_id: str, user=Depends(get_current_user)):
+    await db.drafts.delete_one({"id": draft_id, "lawyer_id": user["id"]})
+    return {"ok": True}
+
+
+# ============ Documents (file uploads, stored as base64) ============
+MAX_DOC_SIZE = 10 * 1024 * 1024  # 10 MB base64
+
+
+class DocumentIn(BaseModel):
+    matter_id: str
+    name: str
+    file_type: str  # pdf | image | docx | other
+    mime_type: Optional[str] = None
+    file_size: int
+    base64: str  # data URL or raw base64
+    category: str = "other"  # pleadings | orders | evidence | correspondence | drafts | other
+
+
+@api_router.get("/documents")
+async def list_documents(user=Depends(get_current_user), matter_id: Optional[str] = None):
+    query = {"lawyer_id": user["id"]}
+    if matter_id:
+        query["matter_id"] = matter_id
+    # Exclude heavy base64 field from list view
+    docs = await db.documents.find(query, {"_id": 0, "base64": 0}).sort("uploaded_at", -1).to_list(500)
+    return docs
+
+
+@api_router.post("/documents")
+async def upload_document(payload: DocumentIn, user=Depends(get_current_user)):
+    # rough size check on base64 string
+    if len(payload.base64) > MAX_DOC_SIZE * 1.4:
+        raise HTTPException(status_code=413, detail="File too large (max 10MB)")
+    doc_id = str(uuid.uuid4())
+    doc = payload.dict()
+    doc.update({
+        "id": doc_id,
+        "lawyer_id": user["id"],
+        "uploaded_at": now_iso(),
+    })
+    await db.documents.insert_one(dict(doc))
+    # return without base64 payload
+    out = {k: v for k, v in doc.items() if k not in ("_id", "base64")}
+    return out
+
+
+@api_router.get("/documents/{document_id}")
+async def get_document(document_id: str, user=Depends(get_current_user)):
+    d = await db.documents.find_one({"id": document_id, "lawyer_id": user["id"]}, {"_id": 0})
+    if not d:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return d
+
+
+@api_router.delete("/documents/{document_id}")
+async def delete_document(document_id: str, user=Depends(get_current_user)):
+    await db.documents.delete_one({"id": document_id, "lawyer_id": user["id"]})
+    return {"ok": True}
+
+
 app.include_router(api_router)
 
 app.add_middleware(

@@ -1,14 +1,15 @@
 import React, { useCallback, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, RefreshControl, KeyboardAvoidingView, Platform, Alert } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, RefreshControl, KeyboardAvoidingView, Platform, Alert, Image } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import * as DocumentPicker from "expo-document-picker";
 import { colors, spacing, type, formatINR, formatDate, formatDateShort } from "../../src/theme";
 import { Badge, Button, EmptyState } from "../../src/ui";
 import { TopBar } from "../../src/TopBar";
 import { api } from "../../src/api";
 
-const TABS = ["overview", "notes", "timeline", "time", "billing"] as const;
+const TABS = ["overview", "notes", "drafts", "docs", "time", "billing"] as const;
 type Tab = typeof TABS[number];
 
 export default function MatterDetail() {
@@ -18,11 +19,20 @@ export default function MatterDetail() {
   const [tab, setTab] = useState<Tab>("overview");
   const [refreshing, setRefreshing] = useState(false);
   const [newNote, setNewNote] = useState("");
+  const [drafts, setDrafts] = useState<any[]>([]);
+  const [docs, setDocs] = useState<any[]>([]);
+  const [uploading, setUploading] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const res = await api.get(`/matters/${id}`);
-      setData(res.data);
+      const [matter, draftsRes, docsRes] = await Promise.all([
+        api.get(`/matters/${id}`),
+        api.get("/drafts", { params: { matter_id: id } }),
+        api.get("/documents", { params: { matter_id: id } }),
+      ]);
+      setData(matter.data);
+      setDrafts(draftsRes.data);
+      setDocs(docsRes.data);
     } catch (e) { console.log(e); }
   }, [id]);
 
@@ -34,17 +44,70 @@ export default function MatterDetail() {
       await api.post("/notes", { matter_id: id, content: newNote.trim(), note_type: "general" });
       setNewNote("");
       load();
+    } catch { Alert.alert("Could not save note"); }
+  };
+
+  const pickDocument = async () => {
+    try {
+      const res = await DocumentPicker.getDocumentAsync({
+        type: ["application/pdf", "image/*"],
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+      if (res.canceled || !res.assets?.[0]) return;
+      const asset = res.assets[0];
+      if (asset.size && asset.size > 10 * 1024 * 1024) {
+        return Alert.alert("Too large", "Max file size is 10 MB.");
+      }
+      setUploading(true);
+      let base64 = "";
+      if (Platform.OS === "web") {
+        // asset.uri is a blob url on web; fetch and convert
+        const response = await fetch(asset.uri);
+        const blob = await response.blob();
+        base64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve((reader.result as string) || "");
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+      } else {
+        const FileSystem = await import("expo-file-system").catch(() => null as any);
+        if (FileSystem?.readAsStringAsync) {
+          const content = await FileSystem.readAsStringAsync(asset.uri, { encoding: "base64" });
+          const prefix = asset.mimeType ? `data:${asset.mimeType};base64,` : "data:application/octet-stream;base64,";
+          base64 = prefix + content;
+        } else {
+          throw new Error("File reading not available");
+        }
+      }
+      const fileType = asset.mimeType?.startsWith("image/") ? "image" : asset.mimeType === "application/pdf" ? "pdf" : "other";
+      await api.post("/documents", {
+        matter_id: id,
+        name: asset.name,
+        file_type: fileType,
+        mime_type: asset.mimeType || "application/octet-stream",
+        file_size: asset.size || 0,
+        base64,
+        category: "other",
+      });
+      await load();
     } catch (e: any) {
-      Alert.alert("Could not save note");
-    }
+      Alert.alert("Upload failed", e?.message || "Try again");
+    } finally { setUploading(false); }
+  };
+
+  const deleteDoc = (docId: string, name: string) => {
+    Alert.alert("Delete document?", name, [
+      { text: "Cancel", style: "cancel" },
+      { text: "Delete", style: "destructive", onPress: async () => {
+        try { await api.delete(`/documents/${docId}`); load(); } catch {}
+      } },
+    ]);
   };
 
   if (!data) {
-    return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: colors.white }}>
-        <TopBar title="Matter" />
-      </SafeAreaView>
-    );
+    return <SafeAreaView style={{ flex: 1, backgroundColor: colors.white }}><TopBar title="Matter" /></SafeAreaView>;
   }
 
   const totalBilled = (data.invoices || []).reduce((s: number, i: any) => s + (i.total_amount || 0), 0);
@@ -56,7 +119,6 @@ export default function MatterDetail() {
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.white }} edges={["top"]}>
       <TopBar title={data.title} subtitle={data.client?.name || "Matter"} />
 
-      {/* Matter info strip */}
       <View style={styles.infoStrip}>
         <View style={{ flexDirection: "row", gap: spacing.sm, flexWrap: "wrap", marginBottom: spacing.sm }}>
           <Badge tone="neutral">{data.matter_type}</Badge>
@@ -68,22 +130,20 @@ export default function MatterDetail() {
         {data.opposing_party ? <Text style={type.small}>vs {data.opposing_party}</Text> : null}
       </View>
 
-      {/* Tabs */}
-      <View style={styles.tabs}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabScroll} contentContainerStyle={{ flexGrow: 0 }}>
         {TABS.map((t) => (
           <TouchableOpacity key={t} onPress={() => setTab(t)} style={[styles.tab, tab === t && styles.tabActive]} testID={`matter-tab-${t}`}>
             <Text style={[styles.tabText, tab === t && styles.tabTextActive]}>{t}</Text>
           </TouchableOpacity>
         ))}
-      </View>
+      </ScrollView>
 
       <ScrollView
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await load(); setRefreshing(false); }} />}
         contentContainerStyle={{ paddingBottom: 40 }}
       >
         {tab === "overview" && (
-          <View style={styles.section}>
-            {/* Stat grid */}
+          <View>
             <View style={styles.statGrid}>
               <View style={[styles.statCell, { borderRightWidth: 1, borderBottomWidth: 1 }]}>
                 <Text style={type.overline}>Hours logged</Text>
@@ -105,32 +165,17 @@ export default function MatterDetail() {
 
             <View style={{ padding: spacing.xl, gap: spacing.md }}>
               <Button title="+ Log time" icon="time-outline" variant="secondary" onPress={() => router.push({ pathname: "/new-time", params: { matterId: id } })} testID="md-log-time" />
-              <Button title="+ Add note" icon="document-text-outline" variant="secondary" onPress={() => setTab("notes")} testID="md-add-note-nav" />
               <Button title="+ Add event" icon="calendar-outline" variant="secondary" onPress={() => router.push({ pathname: "/new-event", params: { matterId: id } })} testID="md-add-event" />
+              <Button title="+ New draft (AI)" icon="sparkles" variant="secondary" onPress={() => router.push({ pathname: "/new-draft", params: { matterId: id } })} testID="md-new-draft" />
               <Button title="Create invoice" icon="receipt-outline" onPress={() => router.push({ pathname: "/new-invoice", params: { matterId: id } })} testID="md-create-invoice" />
             </View>
-
-            {data.events?.length ? (
-              <>
-                <Text style={[type.overline, { paddingHorizontal: spacing.xl, marginTop: spacing.md }]}>Upcoming</Text>
-                {data.events.slice(0, 3).map((e: any) => (
-                  <View key={e.id} style={styles.row}>
-                    <Ionicons name={e.event_type === "hearing" ? "hammer-outline" : "alarm-outline"} size={16} color={colors.ink} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={type.body} numberOfLines={1}>{e.title}</Text>
-                      <Text style={type.small}>{formatDate(e.date)}{e.time ? ` · ${e.time}` : ""}</Text>
-                    </View>
-                  </View>
-                ))}
-              </>
-            ) : null}
           </View>
         )}
 
         {tab === "notes" && (
           <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined}>
             <View style={{ padding: spacing.xl }}>
-              <View style={{ flexDirection: "row", gap: spacing.sm, alignItems: "flex-start" }}>
+              <View style={{ flexDirection: "row", gap: spacing.sm }}>
                 <TextInput
                   value={newNote}
                   onChangeText={setNewNote}
@@ -146,46 +191,85 @@ export default function MatterDetail() {
               </View>
             </View>
             {(data.notes || []).length === 0 ? (
-              <EmptyState icon="document-text-outline" title="No notes yet" subtitle="Capture hearing outcomes, instructions, and reminders." />
+              <EmptyState icon="document-text-outline" title="No notes yet" subtitle="Capture hearing outcomes and instructions." />
             ) : (
               (data.notes || []).map((n: any) => (
                 <View key={n.id} style={styles.noteRow}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={type.body}>{n.content}</Text>
-                    <Text style={[type.small, { marginTop: 4 }]}>{formatDate(n.created_at)}</Text>
-                  </View>
+                  <Text style={type.body}>{n.content}</Text>
+                  <Text style={[type.small, { marginTop: 4 }]}>{formatDate(n.created_at)}</Text>
                 </View>
               ))
             )}
           </KeyboardAvoidingView>
         )}
 
-        {tab === "timeline" && (
-          <View style={{ padding: spacing.xl }}>
-            {[...(data.events || []), ...(data.notes || []).map((n: any) => ({ ...n, event_type: "note", date: n.created_at, title: n.content?.slice(0, 60) }))]
-              .sort((a: any, b: any) => new Date(a.date || a.created_at).getTime() - new Date(b.date || b.created_at).getTime())
-              .map((item: any, idx: number) => (
-                <View key={idx} style={styles.timelineRow}>
-                  <View style={styles.timelineDot} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={type.overline}>{item.event_type}</Text>
-                    <Text style={type.body} numberOfLines={2}>{item.title}</Text>
-                    <Text style={type.small}>{formatDateShort(item.date || item.created_at)}</Text>
+        {tab === "drafts" && (
+          <>
+            <View style={{ padding: spacing.xl }}>
+              <Button title="+ New AI draft" icon="sparkles" onPress={() => router.push({ pathname: "/new-draft", params: { matterId: id } })} testID="md-drafts-new" />
+            </View>
+            {drafts.length === 0 ? (
+              <EmptyState icon="document-text-outline" title="No drafts yet" subtitle="Generate court-ready drafts with AI assistance." />
+            ) : (
+              drafts.map((d) => (
+                <TouchableOpacity key={d.id} style={styles.row} onPress={() => router.push({ pathname: "/draft/[id]", params: { id: d.id } })} testID={`md-draft-${d.id}`}>
+                  <View style={{ width: 36, height: 36, borderWidth: 1, borderColor: colors.border, alignItems: "center", justifyContent: "center", borderRadius: 4 }}>
+                    <Ionicons name="document-text-outline" size={18} color={colors.ink} />
                   </View>
-                </View>
-              ))}
-          </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={type.body} numberOfLines={1}>{d.title}</Text>
+                    <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: 4 }}>
+                      <Badge tone="neutral">{d.document_type.replace("_", " ")}</Badge>
+                      <Badge tone={d.status === "filed" ? "success" : d.status === "ready" ? "info" : "neutral"}>{d.status}</Badge>
+                    </View>
+                    <Text style={[type.small, { marginTop: 4 }]}>v{d.version} · {formatDate(d.updated_at)}</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={16} color={colors.inkLight} />
+                </TouchableOpacity>
+              ))
+            )}
+          </>
+        )}
+
+        {tab === "docs" && (
+          <>
+            <View style={{ padding: spacing.xl }}>
+              <Button title={uploading ? "Uploading..." : "+ Upload document"} icon="cloud-upload-outline" onPress={pickDocument} loading={uploading} testID="md-docs-upload" />
+              <Text style={[type.small, { marginTop: 8, textAlign: "center" }]}>PDF, JPG, PNG · max 10 MB</Text>
+            </View>
+            {docs.length === 0 ? (
+              <EmptyState icon="folder-outline" title="No documents" subtitle="Upload pleadings, orders, evidence, or correspondence." />
+            ) : (
+              docs.map((d) => (
+                <TouchableOpacity
+                  key={d.id}
+                  style={styles.row}
+                  onPress={() => router.push({ pathname: "/document/[id]", params: { id: d.id } })}
+                  onLongPress={() => deleteDoc(d.id, d.name)}
+                  testID={`md-doc-${d.id}`}
+                >
+                  <View style={{ width: 36, height: 36, borderWidth: 1, borderColor: colors.border, alignItems: "center", justifyContent: "center", borderRadius: 4 }}>
+                    <Ionicons name={d.file_type === "pdf" ? "document-outline" : d.file_type === "image" ? "image-outline" : "document-attach-outline"} size={18} color={colors.ink} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={type.body} numberOfLines={1}>{d.name}</Text>
+                    <Text style={type.small}>{(d.file_size / 1024).toFixed(0)} KB · {formatDate(d.uploaded_at)}</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={16} color={colors.inkLight} />
+                </TouchableOpacity>
+              ))
+            )}
+          </>
         )}
 
         {tab === "time" && (
           <>
             {(data.time_entries || []).length === 0 ? (
-              <EmptyState
-                icon="time-outline"
-                title="No time logged"
-                subtitle="Track billable hours to generate invoices."
-                action={<TouchableOpacity onPress={() => router.push({ pathname: "/new-time", params: { matterId: id } })} style={styles.inkBtn}><Text style={{ color: colors.white, fontWeight: "700" }}>+ Log time</Text></TouchableOpacity>}
-              />
+              <EmptyState icon="time-outline" title="No time logged" subtitle="Track billable hours." action={
+                <TouchableOpacity onPress={() => router.push({ pathname: "/new-time", params: { matterId: id } })} style={styles.inkBtn}>
+                  <Text style={{ color: colors.white, fontWeight: "700" }}>+ Log time</Text>
+                </TouchableOpacity>
+              } />
             ) : (
               (data.time_entries || []).map((t: any) => (
                 <View key={t.id} style={styles.row}>
@@ -207,23 +291,20 @@ export default function MatterDetail() {
               <Button title="Create invoice" onPress={() => router.push({ pathname: "/new-invoice", params: { matterId: id } })} testID="md-billing-create" />
             </View>
             {(data.invoices || []).length === 0 ? (
-              <EmptyState icon="receipt-outline" title="No invoices" subtitle="Bill time entries or disbursements." />
+              <EmptyState icon="receipt-outline" title="No invoices" subtitle="Bill time or disbursements." />
             ) : (
-              (data.invoices || []).map((inv: any) => {
-                const out = (inv.total_amount || 0) - (inv.paid_amount || 0);
-                return (
-                  <TouchableOpacity key={inv.id} style={styles.row} onPress={() => router.push({ pathname: "/invoice/[id]", params: { id: inv.id } })}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={type.body}>{inv.invoice_number}</Text>
-                      <Text style={type.small}>Issued {formatDate(inv.issue_date)}</Text>
-                    </View>
-                    <View style={{ alignItems: "flex-end" }}>
-                      <Text style={type.h3}>{formatINR(inv.total_amount)}</Text>
-                      <Badge tone={inv.status === "paid" ? "success" : inv.status === "overdue" ? "alert" : "info"}>{inv.status}</Badge>
-                    </View>
-                  </TouchableOpacity>
-                );
-              })
+              (data.invoices || []).map((inv: any) => (
+                <TouchableOpacity key={inv.id} style={styles.row} onPress={() => router.push({ pathname: "/invoice/[id]", params: { id: inv.id } })}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={type.body}>{inv.invoice_number}</Text>
+                    <Text style={type.small}>Issued {formatDate(inv.issue_date)}</Text>
+                  </View>
+                  <View style={{ alignItems: "flex-end" }}>
+                    <Text style={type.h3}>{formatINR(inv.total_amount)}</Text>
+                    <Badge tone={inv.status === "paid" ? "success" : inv.status === "overdue" ? "alert" : "info"}>{inv.status}</Badge>
+                  </View>
+                </TouchableOpacity>
+              ))
             )}
           </>
         )}
@@ -234,21 +315,16 @@ export default function MatterDetail() {
 
 const styles = StyleSheet.create({
   infoStrip: { paddingHorizontal: spacing.xl, paddingVertical: spacing.md, borderBottomWidth: 1, borderColor: colors.border, backgroundColor: colors.bgMuted },
-  tabs: { flexDirection: "row", backgroundColor: colors.white, borderBottomWidth: 1, borderColor: colors.border },
-  tab: { flex: 1, paddingVertical: 12, alignItems: "center" },
+  tabScroll: { backgroundColor: colors.white, borderBottomWidth: 1, borderColor: colors.border, maxHeight: 46 },
+  tab: { paddingHorizontal: spacing.lg, paddingVertical: 12, alignItems: "center", minWidth: 80 },
   tabActive: { borderBottomWidth: 2, borderColor: colors.ink },
   tabText: { fontSize: 11, fontWeight: "700", color: colors.inkMuted, textTransform: "uppercase", letterSpacing: 0.5 },
   tabTextActive: { color: colors.ink },
-  section: {},
   statGrid: { flexDirection: "row", flexWrap: "wrap", borderTopWidth: 1, borderColor: colors.border },
   statCell: { width: "50%", padding: spacing.lg, borderColor: colors.border },
-  row: { flexDirection: "row", alignItems: "flex-start", gap: spacing.md, paddingHorizontal: spacing.xl, paddingVertical: spacing.md, borderTopWidth: 1, borderColor: colors.border },
-  noteInput: {
-    flex: 1, borderWidth: 1, borderColor: colors.border, padding: 12, minHeight: 60, borderRadius: 4, fontSize: 14,
-  },
+  row: { flexDirection: "row", alignItems: "center", gap: spacing.md, paddingHorizontal: spacing.xl, paddingVertical: spacing.md, borderTopWidth: 1, borderColor: colors.border },
+  noteInput: { flex: 1, borderWidth: 1, borderColor: colors.border, padding: 12, minHeight: 60, borderRadius: 4, fontSize: 14 },
   noteBtn: { width: 44, height: 44, backgroundColor: colors.ink, alignItems: "center", justifyContent: "center", borderRadius: 4 },
   noteRow: { padding: spacing.xl, borderTopWidth: 1, borderColor: colors.border },
-  timelineRow: { flexDirection: "row", gap: spacing.md, paddingVertical: spacing.md },
-  timelineDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.ink, marginTop: 8 },
   inkBtn: { backgroundColor: colors.ink, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 4 },
 });

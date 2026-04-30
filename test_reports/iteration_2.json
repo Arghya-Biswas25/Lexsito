@@ -1,0 +1,48 @@
+{
+  "summary": "Iteration 2 backend testing for LexManager NEW endpoints only (AI Drafting Studio + Drafts CRUD + Documents upload/viewer). Created /app/backend/tests/test_new_features.py with 23 focused tests. ALL 23 TESTS PASSED (100%). Tested against the public ingress URL (EXPO_PUBLIC_BACKEND_URL). Claude Haiku 4.5 via emergentintegrations/EMERGENT_LLM_KEY responded in ~11s for draft-from-facts and produced a well-structured Indian-legal-English legal notice.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/documents (POST)", "issue": "The 413 size threshold is len(base64) > MAX_DOC_SIZE * 1.4 = ~14MB, not the stated 10MB. The error message 'File too large (max 10MB)' is misleading — a 13MB base64 string would be accepted despite the message. Either tighten the threshold to MAX_DOC_SIZE exactly, or update the error message to reflect the actual ~14MB cap."},
+      {"endpoint": "/api/drafts (PUT)", "issue": "Version increments on every PUT even if no fields actually changed. Consider only bumping version when content changes, or exposing a force-bump flag."},
+      {"endpoint": "/api/ai/draft-from-facts & /api/ai/strengthen", "issue": "matter_id in DraftFromFactsIn is accepted but never validated against the caller's lawyer_id — an attacker could theoretically pass someone else's matter_id, but since it's not persisted here, impact is low. Consider validating ownership if matter_id is ever used downstream."},
+      {"endpoint": "/api/documents (POST)", "issue": "No validation that matter_id actually belongs to the calling lawyer — a malicious client could attach a document to any matter_id string. The doc is still scoped to the uploader's lawyer_id so listing is safe, but it creates orphan/garbage data. Recommend validating matter ownership before insert."},
+      {"endpoint": "/api/drafts (POST)", "issue": "Same as above — matter_id is not verified to belong to the caller's lawyer_id before creating the draft."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_new_features.py",
+    "/app/test_reports/pytest/new_features_results.xml"
+  ],
+  "action_items": [
+    "(Optional) Fix 413 threshold or error message mismatch in POST /api/documents (currently rejects at ~14MB, error says 10MB).",
+    "(Optional) Validate matter_id ownership on POST /api/drafts and POST /api/documents to prevent cross-tenant data pollution.",
+    "(Optional) Consider only bumping draft version when content actually changes."
+  ],
+  "critical_code_review_comments": [
+    "Emergentintegrations LlmChat is invoked correctly with anthropic/claude-haiku-4-5-20251001 and EMERGENT_LLM_KEY — Claude responded in ~11s with a properly formatted Indian legal notice.",
+    "All new endpoints correctly enforce Bearer-token auth (401 without, verified for both /ai/*, /drafts, /documents).",
+    "Multi-tenancy is correctly enforced on /drafts and /documents via lawyer_id scoping — a second user cannot list, fetch, or mutate the first user's drafts/documents (returns 404).",
+    "GET /api/documents (list) correctly projects away base64; GET /api/documents/{id} includes base64. Contract honoured.",
+    "POST /api/documents (create) correctly strips base64 from response.",
+    "Draft version increments correctly on PUT (verified v1 → v2).",
+    "MongoDB _id is properly stripped on every new endpoint's response (verified across list/detail/create/update).",
+    "413 response is returned for oversized base64 payloads (verified with 15MB payload).",
+    "Route ordering has no conflicts between /api/drafts/{id}, /api/documents/{id} and list endpoints."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_new_features.py (created)"
+  ],
+  "success_rate": {"backend": "100% (23/23 new + previously 36/36)", "frontend": "not tested (skipped as requested)"},
+  "seed_data_creation": "No new seed data created. Used existing demo@lex.in user's seeded matter for draft/document creation. All test artifacts prefixed TEST_ and cleaned up (drafts & docs deleted at end of each flow).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Both new feature suites (AI Drafting + Documents) are fully green. Regression suite at /app/backend/tests/test_new_features.py takes ~20s (AI calls dominate, ~11s + ~3s). If iterating on AI: expect Claude Haiku 4.5 latency of 8-15s per call; keep test timeouts ≥40s. The tiny-PNG base64 constant TINY_PNG_B64 in the test file is handy for quick document upload smoke tests. MAX_DOC_SIZE threshold is actually ~14MB (10MB * 1.4) despite the error message saying 10MB — main agent may want to align these.",
+  "rca_of_issue": "N/A — no failures."
+}
