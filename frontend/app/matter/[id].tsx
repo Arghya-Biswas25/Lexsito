@@ -1,16 +1,25 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, RefreshControl, KeyboardAvoidingView, Platform, Alert, Image } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
-import { colors, spacing, type, formatINR, formatDate, formatDateShort } from "../../src/theme";
+import { colors, spacing, type, formatINR, formatDate, formatDateShort, useTheme } from "../../src/theme";
 import { Badge, Button, EmptyState } from "../../src/ui";
 import { TopBar } from "../../src/TopBar";
 import { api } from "../../src/api";
 
 const TABS = ["overview", "notes", "drafts", "docs", "time", "billing"] as const;
 type Tab = typeof TABS[number];
+
+const DOC_CATEGORIES = [
+  { key: "all", label: "All", icon: "folder-outline" as const },
+  { key: "pleadings", label: "Pleadings", icon: "document-text-outline" as const },
+  { key: "orders", label: "Orders", icon: "hammer-outline" as const },
+  { key: "evidence", label: "Evidence", icon: "albums-outline" as const },
+  { key: "correspondence", label: "Letters", icon: "mail-outline" as const },
+  { key: "other", label: "Other", icon: "ellipsis-horizontal" as const },
+];
 
 export default function MatterDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -21,6 +30,7 @@ export default function MatterDetail() {
   const [newNote, setNewNote] = useState("");
   const [drafts, setDrafts] = useState<any[]>([]);
   const [docs, setDocs] = useState<any[]>([]);
+  const [docCategory, setDocCategory] = useState<string>("all");
   const [uploading, setUploading] = useState(false);
 
   const load = useCallback(async () => {
@@ -47,7 +57,7 @@ export default function MatterDetail() {
     } catch { Alert.alert("Could not save note"); }
   };
 
-  const pickDocument = async () => {
+  const pickDocument = async (category: string = "other") => {
     try {
       const res = await DocumentPicker.getDocumentAsync({
         type: ["application/pdf", "image/*"],
@@ -62,7 +72,6 @@ export default function MatterDetail() {
       setUploading(true);
       let base64 = "";
       if (Platform.OS === "web") {
-        // asset.uri is a blob url on web; fetch and convert
         const response = await fetch(asset.uri);
         const blob = await response.blob();
         base64 = await new Promise<string>((resolve, reject) => {
@@ -89,7 +98,7 @@ export default function MatterDetail() {
         mime_type: asset.mimeType || "application/octet-stream",
         file_size: asset.size || 0,
         base64,
-        category: "other",
+        category,
       });
       await load();
     } catch (e: any) {
@@ -233,14 +242,44 @@ export default function MatterDetail() {
 
         {tab === "docs" && (
           <>
+            {/* Category folders */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.catRow}>
+              {DOC_CATEGORIES.map((c) => {
+                const count = c.key === "all" ? docs.length : docs.filter(d => d.category === c.key).length;
+                const active = docCategory === c.key;
+                return (
+                  <TouchableOpacity
+                    key={c.key}
+                    onPress={() => setDocCategory(c.key)}
+                    style={[styles.catChip, active && { backgroundColor: colors.ink, borderColor: colors.ink }]}
+                    testID={`docs-cat-${c.key}`}
+                  >
+                    <Ionicons name={c.icon} size={14} color={active ? colors.white : colors.ink} />
+                    <Text style={[styles.catLabel, { color: active ? colors.white : colors.ink }]}>{c.label}</Text>
+                    {count > 0 && <View style={[styles.catBadge, active && { backgroundColor: "rgba(255,255,255,0.2)" }]}>
+                      <Text style={{ fontSize: 10, fontWeight: "700", color: active ? colors.white : colors.ink }}>{count}</Text>
+                    </View>}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
             <View style={{ padding: spacing.xl }}>
-              <Button title={uploading ? "Uploading..." : "+ Upload document"} icon="cloud-upload-outline" onPress={pickDocument} loading={uploading} testID="md-docs-upload" />
+              <Button
+                title={uploading ? "Uploading..." : `+ Upload to ${docCategory === "all" ? "Other" : DOC_CATEGORIES.find(c => c.key === docCategory)?.label}`}
+                icon="cloud-upload-outline"
+                onPress={() => pickDocument(docCategory === "all" ? "other" : docCategory)}
+                loading={uploading}
+                testID="md-docs-upload"
+              />
               <Text style={[type.small, { marginTop: 8, textAlign: "center" }]}>PDF, JPG, PNG · max 10 MB</Text>
             </View>
-            {docs.length === 0 ? (
-              <EmptyState icon="folder-outline" title="No documents" subtitle="Upload pleadings, orders, evidence, or correspondence." />
-            ) : (
-              docs.map((d) => (
+            {(() => {
+              const filtered = docCategory === "all" ? docs : docs.filter(d => d.category === docCategory);
+              if (filtered.length === 0) {
+                return <EmptyState icon="folder-outline" title="No documents" subtitle={`Upload ${docCategory === "all" ? "pleadings, orders, evidence, or correspondence" : DOC_CATEGORIES.find(c => c.key === docCategory)?.label.toLowerCase()}.`} />;
+              }
+              return filtered.map((d) => (
                 <TouchableOpacity
                   key={d.id}
                   style={styles.row}
@@ -253,12 +292,15 @@ export default function MatterDetail() {
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={type.body} numberOfLines={1}>{d.name}</Text>
-                    <Text style={type.small}>{(d.file_size / 1024).toFixed(0)} KB · {formatDate(d.uploaded_at)}</Text>
+                    <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: 3, alignItems: "center" }}>
+                      <Badge tone="neutral">{d.category || "other"}</Badge>
+                      <Text style={type.small}>{(d.file_size / 1024).toFixed(0)} KB · {formatDate(d.uploaded_at)}</Text>
+                    </View>
                   </View>
                   <Ionicons name="chevron-forward" size={16} color={colors.inkLight} />
                 </TouchableOpacity>
-              ))
-            )}
+              ));
+            })()}
           </>
         )}
 
@@ -327,4 +369,8 @@ const styles = StyleSheet.create({
   noteBtn: { width: 44, height: 44, backgroundColor: colors.ink, alignItems: "center", justifyContent: "center", borderRadius: 4 },
   noteRow: { padding: spacing.xl, borderTopWidth: 1, borderColor: colors.border },
   inkBtn: { backgroundColor: colors.ink, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 4 },
+  catRow: { paddingHorizontal: spacing.xl, paddingVertical: spacing.md, gap: spacing.sm, flexDirection: "row" },
+  catChip: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderWidth: 1, borderColor: colors.border, borderRadius: 4, marginRight: spacing.sm },
+  catLabel: { fontSize: 12, fontWeight: "700", letterSpacing: 0.3 },
+  catBadge: { minWidth: 20, height: 18, backgroundColor: colors.bgMuted, borderRadius: 9, alignItems: "center", justifyContent: "center", paddingHorizontal: 6 },
 });

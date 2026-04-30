@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, RefreshC
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { colors, spacing, type } from "../../src/theme";
+import { colors, spacing, type, useTheme } from "../../src/theme";
 import { api } from "../../src/api";
 import { Avatar, Badge, EmptyState } from "../../src/ui";
 
@@ -25,6 +25,7 @@ const FILTERS = [
 
 export default function Clients() {
   const router = useRouter();
+  const { mode } = useTheme();
   const [clients, setClients] = useState<Client[]>([]);
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState("active");
@@ -40,7 +41,7 @@ export default function Clients() {
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   return (
-    <SafeAreaView style={styles.container} edges={["top"]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.bg }]} edges={["top"]} key={mode}>
       <View style={styles.header}>
         <View style={{ flex: 1 }}>
           <Text style={type.overline}>Directory</Text>

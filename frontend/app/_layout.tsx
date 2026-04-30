@@ -4,7 +4,7 @@ import { AuthProvider, useAuth } from "../src/auth";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { View, ActivityIndicator } from "react-native";
-import { colors } from "../src/theme";
+import { colors, ThemeProvider, useTheme } from "../src/theme";
 
 function AuthGate({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -24,7 +24,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 
   if (loading) {
     return (
-      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.white }}>
+      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.bg }}>
         <ActivityIndicator color={colors.ink} />
       </View>
     );
@@ -32,15 +32,29 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function StackShell() {
+  const { mode } = useTheme();
+  return (
+    <>
+      <StatusBar style={mode === "dark" ? "light" : "dark"} />
+      <Stack
+        key={mode}
+        screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }}
+      />
+    </>
+  );
+}
+
 export default function RootLayout() {
   return (
     <SafeAreaProvider>
-      <AuthProvider>
-        <AuthGate>
-          <StatusBar style="dark" />
-          <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.white } }} />
-        </AuthGate>
-      </AuthProvider>
+      <ThemeProvider>
+        <AuthProvider>
+          <AuthGate>
+            <StackShell />
+          </AuthGate>
+        </AuthProvider>
+      </ThemeProvider>
     </SafeAreaProvider>
   );
 }

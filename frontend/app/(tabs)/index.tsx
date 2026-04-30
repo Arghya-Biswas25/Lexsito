@@ -1,9 +1,9 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, RefreshControl, TouchableOpacity } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { colors, spacing, type, formatINR, formatDateShort, daysBetween } from "../../src/theme";
+import { colors, spacing, type, formatINR, formatDateShort, daysBetween, useTheme } from "../../src/theme";
 import { api } from "../../src/api";
 import { useAuth } from "../../src/auth";
 import { Badge } from "../../src/ui";
@@ -22,8 +22,10 @@ type Stats = {
 export default function Home() {
   const { user, logout } = useAuth();
   const router = useRouter();
+  const { mode } = useTheme();
   const [stats, setStats] = useState<Stats | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const styles = useMemo(() => makeStyles(), [mode]);
 
   const load = useCallback(async () => {
     try {
@@ -76,6 +78,7 @@ export default function Home() {
         {/* Stat Grid - Grid Borders pattern */}
         <View style={styles.statGrid}>
           <StatCell
+            styles={styles}
             label="Active matters"
             value={String(stats?.active_matters ?? "—")}
             onPress={() => router.push("/(tabs)/matters")}
@@ -84,6 +87,7 @@ export default function Home() {
             borderBottom
           />
           <StatCell
+            styles={styles}
             label="Unbilled"
             value={formatINR(stats?.unbilled_amount ?? 0)}
             onPress={() => router.push("/time")}
@@ -91,6 +95,7 @@ export default function Home() {
             borderBottom
           />
           <StatCell
+            styles={styles}
             label="Overdue"
             value={formatINR(stats?.overdue_amount ?? 0)}
             tone={stats?.overdue_amount ? "alert" : "neutral"}
@@ -99,6 +104,7 @@ export default function Home() {
             borderRight
           />
           <StatCell
+            styles={styles}
             label="Hearings / week"
             value={String(stats?.hearings_this_week ?? "—")}
             onPress={() => router.push("/(tabs)/calendar")}
@@ -108,7 +114,7 @@ export default function Home() {
 
         {/* Today's Hearings */}
         <View style={styles.section}>
-          <SectionHeader title="Today's schedule" action="See all" onAction={() => router.push("/(tabs)/calendar")} />
+          <SectionHeader styles={styles} title="Today's schedule" action="See all" onAction={() => router.push("/(tabs)/calendar")} />
           {(stats?.todays_hearings || []).length === 0 ? (
             <Text style={[type.bodyMuted, { paddingHorizontal: spacing.xl, paddingBottom: spacing.md }]}>No hearings today.</Text>
           ) : (
@@ -138,16 +144,16 @@ export default function Home() {
         <View style={[styles.section, { paddingHorizontal: spacing.xl }]}>
           <Text style={[type.overline, { marginBottom: spacing.md }]}>Quick actions</Text>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing.md }}>
-            <QuickAction icon="person-add-outline" label="New client" onPress={() => router.push("/new-client")} testID="qa-new-client" />
-            <QuickAction icon="briefcase-outline" label="New matter" onPress={() => router.push("/new-matter")} testID="qa-new-matter" />
-            <QuickAction icon="calendar-outline" label="Add hearing" onPress={() => router.push("/new-event")} testID="qa-new-event" />
-            <QuickAction icon="time-outline" label="Log time" onPress={() => router.push("/new-time")} testID="qa-new-time" />
+            <QuickAction styles={styles} icon="person-add-outline" label="New client" onPress={() => router.push("/new-client")} testID="qa-new-client" />
+            <QuickAction styles={styles} icon="briefcase-outline" label="New matter" onPress={() => router.push("/new-matter")} testID="qa-new-matter" />
+            <QuickAction styles={styles} icon="calendar-outline" label="Add hearing" onPress={() => router.push("/new-event")} testID="qa-new-event" />
+            <QuickAction styles={styles} icon="time-outline" label="Log time" onPress={() => router.push("/new-time")} testID="qa-new-time" />
           </View>
         </View>
 
         {/* Upcoming deadlines */}
         <View style={styles.section}>
-          <SectionHeader title="Deadlines" action="Calendar" onAction={() => router.push("/(tabs)/calendar")} />
+          <SectionHeader styles={styles} title="Deadlines" action="Calendar" onAction={() => router.push("/(tabs)/calendar")} />
           {(stats?.upcoming_deadlines || []).length === 0 ? (
             <Text style={[type.bodyMuted, { paddingHorizontal: spacing.xl, paddingBottom: spacing.md }]}>No upcoming deadlines.</Text>
           ) : (
@@ -171,7 +177,7 @@ export default function Home() {
 
         {/* Outstanding Invoices */}
         <View style={styles.section}>
-          <SectionHeader title="Outstanding invoices" action="Billing" onAction={() => router.push("/(tabs)/billing")} />
+          <SectionHeader styles={styles} title="Outstanding invoices" action="Billing" onAction={() => router.push("/(tabs)/billing")} />
           {(stats?.outstanding_invoices || []).length === 0 ? (
             <Text style={[type.bodyMuted, { paddingHorizontal: spacing.xl, paddingBottom: spacing.md }]}>All clear. No outstanding invoices.</Text>
           ) : (
@@ -207,8 +213,8 @@ export default function Home() {
 }
 
 const StatCell = ({
-  label, value, onPress, testID, tone = "neutral", borderRight, borderBottom
-}: { label: string; value: string; onPress?: () => void; testID?: string; tone?: "neutral" | "alert"; borderRight?: boolean; borderBottom?: boolean }) => (
+  styles, label, value, onPress, testID, tone = "neutral", borderRight, borderBottom
+}: { styles: any; label: string; value: string; onPress?: () => void; testID?: string; tone?: "neutral" | "alert"; borderRight?: boolean; borderBottom?: boolean }) => (
   <TouchableOpacity
     onPress={onPress}
     activeOpacity={0.7}
@@ -219,31 +225,31 @@ const StatCell = ({
     ]}
     testID={testID}
   >
-    <Text style={[type.overline, { marginBottom: 8 }]}>{label}</Text>
+    <Text style={[type.overline, { marginBottom: 8, color: colors.inkMuted }]}>{label}</Text>
     <Text style={[type.metric, { color: tone === "alert" ? colors.alert : colors.ink }]}>{value}</Text>
   </TouchableOpacity>
 );
 
-const SectionHeader = ({ title, action, onAction }: { title: string; action?: string; onAction?: () => void }) => (
+const SectionHeader = ({ styles, title, action, onAction }: { styles: any; title: string; action?: string; onAction?: () => void }) => (
   <View style={styles.sectionHeader}>
-    <Text style={type.h3}>{title}</Text>
+    <Text style={[type.h3, { color: colors.ink }]}>{title}</Text>
     {action && (
       <TouchableOpacity onPress={onAction}>
-        <Text style={{ fontSize: 13, fontWeight: "600", color: colors.ink }}>{action} <Ionicons name="arrow-forward" size={12} /></Text>
+        <Text style={{ fontSize: 13, fontWeight: "600", color: colors.ink }}>{action} <Ionicons name="arrow-forward" size={12} color={colors.ink} /></Text>
       </TouchableOpacity>
     )}
   </View>
 );
 
-const QuickAction = ({ icon, label, onPress, testID }: { icon: any; label: string; onPress: () => void; testID?: string }) => (
+const QuickAction = ({ styles, icon, label, onPress, testID }: { styles: any; icon: any; label: string; onPress: () => void; testID?: string }) => (
   <TouchableOpacity onPress={onPress} style={styles.qa} testID={testID}>
     <Ionicons name={icon} size={18} color={colors.ink} />
     <Text style={{ fontSize: 13, fontWeight: "600", color: colors.ink, marginTop: 6 }}>{label}</Text>
   </TouchableOpacity>
 );
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.white },
+const makeStyles = () => StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.bg },
   header: {
     paddingHorizontal: spacing.xl,
     paddingTop: spacing.md,
@@ -323,3 +329,7 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
 });
+
+// Module-level default styles snapshot so sub-components (StatCell, SectionHeader, QuickAction) can use `styles`.
+// Home component recreates via useMemo for dark-mode updates.
+const styles = makeStyles();

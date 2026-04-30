@@ -27,6 +27,7 @@ const FILTERS = [
 
 export default function Matters() {
   const router = useRouter();
+  const { mode } = useTheme();
   const [matters, setMatters] = useState<Matter[]>([]);
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState("active");
@@ -42,7 +43,7 @@ export default function Matters() {
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   return (
-    <SafeAreaView style={styles.container} edges={["top"]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.bg }]} edges={["top"]} key={mode}>
       <View style={styles.header}>
         <View style={{ flex: 1 }}>
           <Text style={type.overline}>Cases</Text>
