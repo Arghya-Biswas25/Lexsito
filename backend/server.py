@@ -1,20 +1,45 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header
-from dotenv import load_dotenv
-from starlette.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 import uuid
-import jwt
-import bcrypt
+import traceback
 from pathlib import Path
-from pydantic import BaseModel, Field, EmailStr
 from typing import List, Optional
 from datetime import datetime, timezone, timedelta
 
+_startup_errors = []
 
-ROOT_DIR = Path(__file__).parent
-load_dotenv(ROOT_DIR / '.env')
+try:
+    from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header
+    from starlette.middleware.cors import CORSMiddleware
+    from pydantic import BaseModel, Field, EmailStr
+except Exception as e:
+    raise  # FastAPI is essential, cannot continue without it
+
+try:
+    from dotenv import load_dotenv
+    ROOT_DIR = Path(__file__).parent
+    load_dotenv(ROOT_DIR / '.env')
+except Exception as e:
+    _startup_errors.append(f"dotenv: {e}")
+
+try:
+    import jwt
+except Exception as e:
+    _startup_errors.append(f"pyjwt: {e}")
+    jwt = None
+
+try:
+    import bcrypt
+except Exception as e:
+    _startup_errors.append(f"bcrypt: {e}")
+    bcrypt = None
+
+try:
+    from motor.motor_asyncio import AsyncIOMotorClient
+    _motor_ok = True
+except Exception as e:
+    _startup_errors.append(f"motor: {e}")
+    _motor_ok = False
 
 mongo_url = os.environ.get('MONGO_URL', '')
 db_name = os.environ.get('DB_NAME', 'lexmanager')
@@ -22,9 +47,10 @@ JWT_SECRET = os.environ.get('JWT_SECRET', 'lexmanager-secret-change-me')
 JWT_ALGO = 'HS256'
 
 try:
-    client = AsyncIOMotorClient(mongo_url) if mongo_url else None
+    client = AsyncIOMotorClient(mongo_url) if (mongo_url and _motor_ok) else None
     db = client[db_name] if client else None
-except Exception:
+except Exception as e:
+    _startup_errors.append(f"mongodb_init: {e}")
     client = None
     db = None
 
@@ -42,7 +68,8 @@ async def health():
         except Exception as e:
             db_status = f"error: {str(e)}"
     return {
-        "status": "ok",
+        "status": "ok" if not _startup_errors else "degraded",
+        "startup_errors": _startup_errors,
         "mongo_url_set": bool(mongo_url),
         "db_name": db_name,
         "db_connected": db_status == "connected",
@@ -993,7 +1020,12 @@ async def cancel_timer(user=Depends(get_current_user)):
 
 
 # ============ AI Drafting (DeepSeek via OpenClaw/OpenRouter) ============
-from openai import AsyncOpenAI
+try:
+    from openai import AsyncOpenAI
+    _openai_ok = True
+except Exception as e:
+    _startup_errors.append(f"openai: {e}")
+    _openai_ok = False
 
 OPENCLAW_API_KEY = os.environ.get("OPENCLAW_API_KEY")
 OPENCLAW_BASE_URL = "https://openrouter.ai/api/v1"
