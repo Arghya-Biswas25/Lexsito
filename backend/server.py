@@ -28,11 +28,8 @@ except Exception as e:
     _startup_errors.append(f"pyjwt: {e}")
     jwt = None
 
-try:
-    import bcrypt
-except Exception as e:
-    _startup_errors.append(f"bcrypt: {e}")
-    bcrypt = None
+import hashlib
+import secrets
 
 try:
     from motor.motor_asyncio import AsyncIOMotorClient
@@ -204,12 +201,18 @@ class NoteIn(BaseModel):
 
 # ============ Auth Helpers ============
 def hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    salt = secrets.token_hex(16)
+    key = hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), 260000)
+    return f"pbkdf2:{salt}:{key.hex()}"
 
 
 def verify_password(password: str, hashed: str) -> bool:
     try:
-        return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
+        if hashed.startswith("pbkdf2:"):
+            _, salt, key = hashed.split(":")
+            new_key = hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), 260000)
+            return new_key.hex() == key
+        return False
     except Exception:
         return False
 
