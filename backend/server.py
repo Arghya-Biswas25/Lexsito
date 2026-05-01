@@ -966,11 +966,12 @@ async def cancel_timer(user=Depends(get_current_user)):
     return {"cancelled": res.deleted_count > 0}
 
 
-# ============ AI Drafting (Claude Haiku 4.5) ============
-import anthropic
+# ============ AI Drafting (DeepSeek via OpenClaw/OpenRouter) ============
+from openai import AsyncOpenAI
 
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
-CLAUDE_MODEL = "claude-haiku-4-5-20251001"
+OPENCLAW_API_KEY = os.environ.get("OPENCLAW_API_KEY")
+OPENCLAW_BASE_URL = "https://openrouter.ai/api/v1"
+DEEPSEEK_MODEL = "deepseek/deepseek-r1-distill-llama-70b"
 
 LEGAL_SYSTEM_PROMPT = """You are an expert legal drafting assistant for Indian advocates practicing in district and high courts.
 
@@ -1012,7 +1013,7 @@ DOC_TYPE_TEMPLATES = {
 
 @api_router.post("/ai/draft-from-facts")
 async def ai_draft_from_facts(payload: DraftFromFactsIn, user=Depends(get_current_user)):
-    if not ANTHROPIC_API_KEY:
+    if not OPENCLAW_API_KEY:
         raise HTTPException(status_code=500, detail="AI not configured")
     template = DOC_TYPE_TEMPLATES.get(payload.document_type, DOC_TYPE_TEMPLATES["other"])
     context_parts = []
@@ -1039,14 +1040,16 @@ Facts provided by the advocate:
 Return ONLY the document content in plain text with clear paragraph structure. Use [PLACEHOLDER] for any missing specifics. Do not include any meta-commentary before or after the document."""
 
     try:
-        client_ai = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
-        message = await client_ai.messages.create(
-            model=CLAUDE_MODEL,
+        client_ai = AsyncOpenAI(base_url=OPENCLAW_BASE_URL, api_key=OPENCLAW_API_KEY)
+        response = await client_ai.chat.completions.create(
+            model=DEEPSEEK_MODEL,
             max_tokens=4096,
-            system=LEGAL_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_text}],
+            messages=[
+                {"role": "system", "content": LEGAL_SYSTEM_PROMPT},
+                {"role": "user", "content": user_text},
+            ],
         )
-        return {"content": message.content[0].text, "document_type": payload.document_type}
+        return {"content": response.choices[0].message.content, "document_type": payload.document_type}
     except Exception as e:
         logger.exception("AI draft failed")
         raise HTTPException(status_code=500, detail=f"AI generation failed: {str(e)[:200]}")
@@ -1054,7 +1057,7 @@ Return ONLY the document content in plain text with clear paragraph structure. U
 
 @api_router.post("/ai/strengthen")
 async def ai_strengthen(payload: StrengthenIn, user=Depends(get_current_user)):
-    if not ANTHROPIC_API_KEY:
+    if not OPENCLAW_API_KEY:
         raise HTTPException(status_code=500, detail="AI not configured")
     mode_instructions = {
         "strengthen": "Rewrite the following passage with stronger, more persuasive Indian legal English. Keep the same meaning but sharpen the language, improve precision of legal terms, and make it more court-ready. Return ONLY the rewritten text.",
@@ -1063,14 +1066,16 @@ async def ai_strengthen(payload: StrengthenIn, user=Depends(get_current_user)):
     }
     instruction = mode_instructions.get(payload.mode, mode_instructions["strengthen"])
     try:
-        client_ai = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
-        message = await client_ai.messages.create(
-            model=CLAUDE_MODEL,
+        client_ai = AsyncOpenAI(base_url=OPENCLAW_BASE_URL, api_key=OPENCLAW_API_KEY)
+        response = await client_ai.chat.completions.create(
+            model=DEEPSEEK_MODEL,
             max_tokens=2048,
-            system=LEGAL_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": f"{instruction}\n\nPassage:\n{payload.text}"}],
+            messages=[
+                {"role": "system", "content": LEGAL_SYSTEM_PROMPT},
+                {"role": "user", "content": f"{instruction}\n\nPassage:\n{payload.text}"},
+            ],
         )
-        return {"content": message.content[0].text}
+        return {"content": response.choices[0].message.content}
     except Exception as e:
         logger.exception("AI strengthen failed")
         raise HTTPException(status_code=500, detail=f"AI generation failed: {str(e)[:200]}")
