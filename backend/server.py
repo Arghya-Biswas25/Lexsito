@@ -16,15 +16,36 @@ from datetime import datetime, timezone, timedelta
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-mongo_url = os.environ['MONGO_URL']
+mongo_url = os.environ.get('MONGO_URL')
+db_name = os.environ.get('DB_NAME', 'lexmanager')
+
+if not mongo_url:
+    raise RuntimeError("MONGO_URL environment variable is not set. Go to Vercel → Settings → Environment Variables and add it.")
+
 client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+db = client[db_name]
 
 JWT_SECRET = os.environ.get('JWT_SECRET', 'lexmanager-secret-change-me')
 JWT_ALGO = 'HS256'
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
+
+
+@app.get("/api/health")
+async def health():
+    try:
+        await client.admin.command('ping')
+        db_status = "connected"
+    except Exception as e:
+        db_status = f"error: {str(e)}"
+    return {
+        "status": "ok",
+        "mongo_url_set": bool(mongo_url),
+        "db_name": db_name,
+        "db_status": db_status,
+        "jwt_secret_set": JWT_SECRET != 'lexmanager-secret-change-me',
+    }
 
 
 # ============ Models ============
