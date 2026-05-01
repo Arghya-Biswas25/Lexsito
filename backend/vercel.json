@@ -1,11 +1,3 @@
 {
-  "version": 2,
-  "functions": {
-    "server.py": {
-      "maxDuration": 30
-    }
-  },
-  "rewrites": [
-    { "source": "/(.*)", "destination": "/server.py" }
-  ]
+  "rewrites": [{ "source": "/(.*)", "destination": "/server.py" }]
 }
