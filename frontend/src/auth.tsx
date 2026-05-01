@@ -39,10 +39,30 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           const res = await api.get("/auth/me");
           setUser(res.data);
           await AsyncStorage.setItem(USER_KEY, JSON.stringify(res.data));
+          setLoading(false);
+          return;
         } catch {
           await AsyncStorage.removeItem(TOKEN_KEY);
           await AsyncStorage.removeItem(USER_KEY);
-          setUser(null);
+        }
+      }
+      // Auto-login with demo account — no login screen needed
+      try {
+        const res = await api.post("/auth/login", { email: "demo@lex.in", password: "demo1234" });
+        await AsyncStorage.setItem(TOKEN_KEY, res.data.token);
+        await AsyncStorage.setItem(USER_KEY, JSON.stringify(res.data.user));
+        setUser(res.data.user);
+      } catch {
+        // Demo account doesn't exist yet — create it
+        try {
+          const res = await api.post("/auth/register", { name: "Demo Lawyer", email: "demo@lex.in", password: "demo1234", city: "New Delhi" });
+          await AsyncStorage.setItem(TOKEN_KEY, res.data.token);
+          await AsyncStorage.setItem(USER_KEY, JSON.stringify(res.data.user));
+          setUser(res.data.user);
+          // Seed demo data for first-time users
+          await api.post("/seed-demo").catch(() => {});
+        } catch {
+          // Backend unreachable — proceed without auth
         }
       }
       setLoading(false);
