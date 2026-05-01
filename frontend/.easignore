@@ -1,0 +1,4 @@
+android/
+ios/
+.metro-cache/
+node_modules/
