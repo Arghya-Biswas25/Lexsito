@@ -16,17 +16,17 @@ from datetime import datetime, timezone, timedelta
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-mongo_url = os.environ.get('MONGO_URL')
+mongo_url = os.environ.get('MONGO_URL', '')
 db_name = os.environ.get('DB_NAME', 'lexmanager')
-
-if not mongo_url:
-    raise RuntimeError("MONGO_URL environment variable is not set. Go to Vercel → Settings → Environment Variables and add it.")
-
-client = AsyncIOMotorClient(mongo_url)
-db = client[db_name]
-
 JWT_SECRET = os.environ.get('JWT_SECRET', 'lexmanager-secret-change-me')
 JWT_ALGO = 'HS256'
+
+try:
+    client = AsyncIOMotorClient(mongo_url) if mongo_url else None
+    db = client[db_name] if client else None
+except Exception:
+    client = None
+    db = None
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
@@ -34,17 +34,20 @@ api_router = APIRouter(prefix="/api")
 
 @app.get("/api/health")
 async def health():
-    try:
-        await client.admin.command('ping')
-        db_status = "connected"
-    except Exception as e:
-        db_status = f"error: {str(e)}"
+    db_status = "no MONGO_URL set"
+    if client:
+        try:
+            await client.admin.command('ping')
+            db_status = "connected"
+        except Exception as e:
+            db_status = f"error: {str(e)}"
     return {
         "status": "ok",
         "mongo_url_set": bool(mongo_url),
         "db_name": db_name,
+        "db_connected": db_status == "connected",
         "db_status": db_status,
-        "jwt_secret_set": JWT_SECRET != 'lexmanager-secret-change-me',
+        "jwt_using_default": JWT_SECRET == 'lexmanager-secret-change-me',
     }
 
 
@@ -194,6 +197,8 @@ def create_token(user_id: str) -> str:
 
 
 async def get_current_user(authorization: Optional[str] = Header(None)):
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not configured. Set MONGO_URL in Vercel environment variables.")
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing or invalid authorization")
     token = authorization.split(" ", 1)[1]
