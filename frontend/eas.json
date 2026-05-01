@@ -16,7 +16,7 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_BACKEND_URL": "YOUR_BACKEND_URL_HERE"
+        "EXPO_PUBLIC_BACKEND_URL": "https://lexsito.vercel.app"
       }
     },
     "production": {
@@ -24,7 +24,7 @@
         "buildType": "app-bundle"
       },
       "env": {
-        "EXPO_PUBLIC_BACKEND_URL": "YOUR_BACKEND_URL_HERE"
+        "EXPO_PUBLIC_BACKEND_URL": "https://lexsito.vercel.app"
       }
     }
   },
