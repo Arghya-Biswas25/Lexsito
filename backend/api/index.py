@@ -1,3 +1,6 @@
+import sys
+sys.path = [p for p in sys.path if '_vendor' not in p]
+
 import os
 import logging
 import uuid
